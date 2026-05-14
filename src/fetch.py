@@ -107,7 +107,7 @@ def fetch_batch(batch: list[str], api_key: str) -> dict[str, str]:
                     articles[pmid_el.text.strip()] = ET.tostring(article_el, encoding="unicode")
         except Exception as e:
             logger.warning(f"Skipping PMC ID {pmcid}: {e}")
-        time.sleep(0.11)  # stay within 10 req/s NCBI limit
+        time.sleep(0.11 * MAX_WORKERS)  # ~3 workers × ~3 req/s each = ~9 req/s total
 
     logger.info(f"Parsed {len(articles)} articles from {len(pmcids)} PMC IDs")
     return articles
