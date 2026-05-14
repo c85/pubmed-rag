@@ -142,7 +142,7 @@ def upload_raw(articles: dict[str, str], blob_storage_credentials: AzureBlobStor
     logger.info(f"Uploaded {uploaded} raw XML files to {BLOB_CONTAINER}")
 
 
-@flow(name="fetch_flow", log_prints=True)
+@flow(name="Fetch PubMed Articles", log_prints=True)
 def fetch_flow():
     logger = get_run_logger()
 
