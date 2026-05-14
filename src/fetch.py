@@ -161,10 +161,14 @@ def fetch_flow():
         fetch_futures = [fetch_batch.submit(batch, api_key) for batch in batches[i:i + MAX_WORKERS]]
         upload_futures = []
         for future in fetch_futures:
-            articles = future.result()
+            try:
+                articles = future.result()
+            except Exception as e:
+                logger.warning(f"fetch_batch failed, skipping: {e}")
+                articles = {}
             upload_futures.append(upload_raw.submit(articles, blob_storage_credentials))
         for uf in upload_futures:
-            uf.result()
+            uf.result(raise_on_failure=False)
         time.sleep(1)
 
 
