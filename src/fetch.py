@@ -1,4 +1,3 @@
-import os
 import time
 import requests
 import xml.etree.ElementTree as ET
@@ -85,35 +84,44 @@ def fetch_batch(batch: list[str], api_key: str) -> dict[str, str]:
 
     logger.info(f"Resolved {len(pmcids)} PMC IDs from {len(batch)} PMIDs")
 
-    # Step 2: Fetch full-text XML from PMC using PMCIDs
-    resp = requests.get(EFETCH_URL, params={
-        "db": "pmc",
-        "id": ",".join(pmcids),
-        "retmode": "xml",
-        "rettype": "full",
-        "api_key": api_key,
-    }, timeout=120, stream=True)
-    resp.raise_for_status()
-    content = b"".join(resp.iter_content(chunk_size=65536))
-
+    # Step 2: Fetch full-text XML one article at a time so a single large
+    # article can't cause a ChunkedEncodingError that drops the whole batch.
     articles = {}
-    try:
-        root = ET.fromstring(content)
-        for article_el in root.findall("article"):
-            pmid_el = article_el.find(
-                "./front/article-meta/article-id[@pub-id-type='pmid']"
-            )
-            if pmid_el is None or not pmid_el.text:
-                logger.warning("Article missing PMID in XML — skipping")
-                continue
-            pmid = pmid_el.text.strip()
-            articles[pmid] = ET.tostring(article_el, encoding="unicode")
-    except ET.ParseError as e:
-        logger.error(f"XML parse error for batch starting {batch[0]}: {e}")
+    for pmcid in pmcids:
+        try:
+            resp = requests.get(EFETCH_URL, params={
+                "db": "pmc",
+                "id": pmcid,
+                "retmode": "xml",
+                "rettype": "full",
+                "api_key": api_key,
+            }, timeout=120, stream=True)
+            resp.raise_for_status()
+            content = b"".join(resp.iter_content(chunk_size=65536))
+            root = ET.fromstring(content)
+            for article_el in root.findall("article"):
+                pmid_el = article_el.find(
+                    "./front/article-meta/article-id[@pub-id-type='pmid']"
+                )
+                if pmid_el is not None and pmid_el.text:
+                    articles[pmid_el.text.strip()] = ET.tostring(article_el, encoding="unicode")
+        except Exception as e:
+            logger.warning(f"Skipping PMC ID {pmcid}: {e}")
+        time.sleep(0.11)  # stay within 10 req/s NCBI limit
 
     logger.info(f"Parsed {len(articles)} articles from {len(pmcids)} PMC IDs")
-    time.sleep(0.1)
     return articles
+
+@task(name="get_uploaded_pmids")
+def get_uploaded_pmids(blob_storage_credentials: AzureBlobStorageCredentials) -> set[str]:
+    """Return the set of PMIDs already present in the blob container."""
+    assert blob_storage_credentials.connection_string is not None
+    conn_str = blob_storage_credentials.connection_string.get_secret_value()
+    container = BlobServiceClient.from_connection_string(conn_str).get_container_client(BLOB_CONTAINER)
+    if not container.exists():
+        return set()
+    return {b["name"].removesuffix(".xml") for b in container.list_blobs()}
+
 
 @task(name="upload_raw", retries=3, retry_delay_seconds=10)
 def upload_raw(articles: dict[str, str], blob_storage_credentials: AzureBlobStorageCredentials) -> None:
@@ -141,6 +149,9 @@ def fetch_flow():
     blob_storage_credentials: AzureBlobStorageCredentials = AzureBlobStorageCredentials.load("fiu-azure-blob-creds")
 
     pmids = get_pmids.submit(api_key).result()
+    uploaded = get_uploaded_pmids.submit(blob_storage_credentials).result()
+    pmids = [p for p in pmids if p not in uploaded]
+    logger.info(f"{len(uploaded)} already uploaded, {len(pmids)} remaining")
     batches = batch_pmids.submit(pmids).result()
 
     logger.info(f"Fetching {len(batches)} batches, {MAX_WORKERS} at a time")
