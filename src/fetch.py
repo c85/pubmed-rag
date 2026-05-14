@@ -138,7 +138,7 @@ def fetch_flow():
     logger = get_run_logger()
 
     api_key = Secret.load("ncbi-api-key").get()
-    blob_storage_credentials: AzureBlobStorageCredentials = AzureBlobStorageCredentials.load("fiu-azure-blob-creds")  # type: ignore[assignment]
+    blob_storage_credentials: AzureBlobStorageCredentials = AzureBlobStorageCredentials.load("fiu-azure-blob-creds")
 
     pmids = get_pmids.submit(api_key).result()
     batches = batch_pmids.submit(pmids).result()
