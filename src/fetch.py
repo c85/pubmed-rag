@@ -68,10 +68,11 @@ def fetch_batch(batch: list[str], api_key: str) -> dict[str, str]:
         "id": ",".join(batch),
         "retmode": "xml",
         "api_key": api_key,
-    }, timeout=30)
+    }, timeout=30, stream=True)
     elink_resp.raise_for_status()
+    elink_content = b"".join(elink_resp.iter_content(chunk_size=65536))
 
-    elink_root = ET.fromstring(elink_resp.text)
+    elink_root = ET.fromstring(elink_content)
     pmcids = [
         el.text
         for el in elink_root.findall(".//LinkSetDb[LinkName='pubmed_pmc']/Link/Id")
