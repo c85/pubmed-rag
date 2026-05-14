@@ -157,10 +157,13 @@ def fetch_flow():
     logger.info(f"Fetching {len(batches)} batches, {MAX_WORKERS} at a time")
 
     for i in range(0, len(batches), MAX_WORKERS):
-        futures = [fetch_batch.submit(batch, api_key) for batch in batches[i:i + MAX_WORKERS]]
-        for future in futures:
+        fetch_futures = [fetch_batch.submit(batch, api_key) for batch in batches[i:i + MAX_WORKERS]]
+        upload_futures = []
+        for future in fetch_futures:
             articles = future.result()
-            upload_raw.submit(articles, blob_storage_credentials)
+            upload_futures.append(upload_raw.submit(articles, blob_storage_credentials))
+        for uf in upload_futures:
+            uf.result()
         time.sleep(1)
 
 
