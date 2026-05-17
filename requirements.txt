@@ -1,3 +1,5 @@
 requests==2.32.5
 prefect-azure[blob_storage]
 azure-storage-blob==12.23.0
+ollama
+pyodbc
